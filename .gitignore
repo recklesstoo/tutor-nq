@@ -1,0 +1,5 @@
+dist/
+shot.py
+*.png
+__pycache__/
+node_modules/
