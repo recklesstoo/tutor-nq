@@ -510,6 +510,7 @@
       '<div class="ev-time mono">' + hhmm(e.t) + (e.id !== S.events.length - 1 ? ' · evento anterior' : '') + '</div><dl>' +
       '<div><dt>Qué pasó</dt><dd>' + esc(e.what) + '</dd></div><div><dt>Por qué importa</dt><dd>' + esc(e.why) + '</dd></div>' +
       (e.plan ? '<div><dt>Qué hacer</dt><dd>' + esc(e.plan) + '</dd></div>' : '') + (e.type === 'RESULT' ? '' : ctxHtml(e, su)) + '</dl>';
+    if (e.setup != null && su) h = h.slice(0, h.indexOf('<dl>')) + reasonsHtml(e, su);   /* en una entrada, el tutor explica sus razones una por una */
     if (su) h += setupHtml(su);
     if (e.note) h += '<p class="note">' + esc(e.note) + '</p>';
     var a = st.ans[e.id];
@@ -630,6 +631,88 @@
     if (tot) sum = '<small class="ctxsum">' + fav + ' de ' + tot + ' a favor de la ' + (d > 0 ? 'compra' : 'venta') + '; los marcados en otro color van en contra. No filtran la entrada, solo dan contexto.' +
       (e.type === 'FALSO' || e.type === 'RECH' ? ' En un giro es normal que el impulso todavía apunte al otro lado.' : '') + '</small>';
     return '<div><dt>Indicadores en esa vela</dt><dd>' + items.join('') + sum + '</dd></div>';
+  }
+
+  /* ---------- razones de una entrada: por qué se toma, qué tiene en contra y qué la invalida ---------- */
+  function reasons(e, su) {
+    var I = ind(), cs = I.cs, lo = 0, hi = cs.length - 1, k = 0, S = st.an.S;
+    while (lo <= hi) { var mid = (lo + hi) >> 1; if (cs[mid].t <= e.ct) { k = mid; lo = mid + 1; } else hi = mid - 1; }
+    var K = cs[k], d = su.dir, sell = d < 0, side = sell ? 'venta' : 'compra', rev = e.type === 'FALSO' || e.type === 'RECH';
+    var pro = [e.what + ' ' + e.why], con = [];
+    /* la vela de la señal */
+    var rng = K.h - K.l;
+    if (rng > 0) {
+      var pos = (K.c - K.l) / rng;
+      if (sell ? pos <= 0.35 : pos >= 0.65) pro.push('La vela cerró en su tercio ' + (sell ? 'inferior' : 'superior') + ': los ' + (sell ? 'vendedores' : 'compradores') + ' dominaron el cierre.');
+      else if (sell ? pos >= 0.65 : pos <= 0.35) con.push('La vela cerró en su parte ' + (sell ? 'alta' : 'baja') + ': el cierre no confirma la ' + side + ' con fuerza.');
+      var wick = sell ? K.h - Math.max(K.o, K.c) : Math.min(K.o, K.c) - K.l;
+      if (rev && wick / rng >= 0.4) pro.push('Dejó una mecha ' + (sell ? 'superior' : 'inferior') + ' de ' + fmtN(wick) + ' pts, el ' + Math.round(wick / rng * 100) + ' % de la vela: el precio fue rechazado con claridad.');
+    }
+    if (st.ind.vol && I.vavg[k]) {
+      var vr = K.v / I.vavg[k];
+      if (vr >= 1.3) pro.push('Volumen ' + vr.toFixed(1) + ' veces el promedio: hubo participación real en el movimiento.');
+      else if (vr <= 0.7) con.push('Volumen bajo, ' + vr.toFixed(1) + ' veces el promedio: poca participación detrás de la señal.');
+    }
+    /* confluencia con otros niveles ya definidos en ese momento */
+    var own = null; S.levels.forEach(function (lv) { if (lv.id === e.level) own = lv; });
+    var base = own ? own.price : su.entry;
+    var lvls = S.levels.filter(function (lv) { return lv.final && lv.finalT <= e.t && lv.id !== e.level; });
+    var near = lvls.filter(function (lv) { return Math.abs(lv.price - base) <= 8 && (lv.price - su.entry) * d <= 2; })   /* los que quedan por delante son obstáculos, no apoyo */
+     .map(function (lv) { return lv.short + ' (' + fmtP(lv.price) + ')'; });
+    if (near.length) pro.push('Hay confluencia: ' + near.join(' y ') + (near.length > 1 ? ' están' : ' está') + ' a menos de 8 pts del mismo punto, así que más participantes miran esta zona.');
+    /* VWAP */
+    if (st.ind.vwap && I.vwap[k] != null) {
+      var dv = K.c - I.vwap[k], adv = fmtN(Math.round(Math.abs(dv)));
+      if (sell ? dv < 0 : dv > 0) pro.push('El precio está ' + (sell ? 'bajo' : 'sobre') + ' el VWAP por ' + adv + ' pts: la ' + side + ' va a favor del precio promedio de la sesión.');
+      else if (rev && Math.abs(dv) >= su.risk * 1.5) pro.push('El precio está estirado ' + adv + ' pts ' + (sell ? 'sobre' : 'bajo') + ' el VWAP: tiene espacio para regresar hacia el promedio.');
+      else con.push('El precio sigue ' + (sell ? 'sobre' : 'bajo') + ' el VWAP por ' + adv + ' pts: la sesión todavía favorece a los ' + (sell ? 'compradores' : 'vendedores') + '.');
+    }
+    /* área de valor de la sesión en ese momento */
+    if (st.ind.vp) {
+      var vp = profAt(e.i);
+      if (vp) {
+        var above = K.c > vp.vah, below = K.c < vp.val;
+        if (rev) {
+          if (sell ? above : below) pro.push('El precio está fuera del área de valor, por ' + (sell ? 'arriba (VAH ' + fmtP(vp.vah) : 'abajo (VAL ' + fmtP(vp.val)) + '): un regreso hacia el valor juega a favor.');
+          else if (sell ? below : above) con.push('El precio ya está ' + (sell ? 'bajo' : 'sobre') + ' el área de valor: ' + (sell ? 'vender' : 'comprar') + ' aquí es perseguir el movimiento.');
+        } else if (sell ? below : above) pro.push('El precio acepta niveles ' + (sell ? 'bajo' : 'sobre') + ' el área de valor: el mercado busca precios más ' + (sell ? 'bajos' : 'altos') + '.');
+        else if (sell ? above : below) con.push('El precio está al otro lado del área de valor: la ' + side + ' va contra la zona donde más se ha negociado.');
+      }
+    }
+    /* impulso */
+    if (st.ind.rsi && I.rsi[k] != null) {
+      var r = I.rsi[k];
+      if (rev) { if (sell ? r >= 70 : r <= 30) pro.push('RSI en ' + (sell ? 'sobrecompra' : 'sobreventa') + ' (' + r.toFixed(0) + '): el movimiento previo venía extendido.'); }
+      else if (sell ? r < 50 : r > 50) pro.push('RSI en ' + r.toFixed(0) + ', del lado ' + (sell ? 'bajista' : 'alcista') + ' de 50: el impulso acompaña.');
+      else con.push('RSI en ' + r.toFixed(0) + ': el impulso todavía no acompaña la ' + side + '.');
+    }
+    if (st.ind.macd && I.hist[k] != null) {
+      if (sell ? I.hist[k] < 0 : I.hist[k] > 0) pro.push('MACD ' + (sell ? 'bajo' : 'sobre') + ' su señal: el impulso ya giró a favor.');
+      else con.push('MACD todavía ' + (sell ? 'sobre' : 'bajo') + ' su señal: el impulso contrario no ha terminado de girar.');
+    }
+    if (st.ind.wr && I.wr[k] != null && rev) {
+      var w = I.wr[k];
+      if (sell ? w >= -20 : w <= -80) pro.push('Williams %R en ' + (sell ? 'sobrecompra' : 'sobreventa') + ' (−' + Math.abs(w).toFixed(0) + '): confirma que el precio estaba en un extremo.');
+    }
+    /* espacio hasta el objetivo */
+    var block = null, tdist = Math.abs(su.target - su.entry);
+    lvls.forEach(function (lv) { var dist = (lv.price - su.entry) * d; if (dist > 2 && dist < tdist && (!block || dist < block.dist)) block = { lv: lv, dist: dist }; });
+    if (block) con.push('Hay un nivel en el camino: ' + block.lv.short + ' en ' + fmtP(block.lv.price) + ', a ' + fmtN(block.dist) + ' pts, antes del objetivo que está a ' + fmtN(tdist) + ' pts. Ahí el precio puede frenar: es buen punto para pasar el stop a la entrada.');
+    else pro.push('Camino libre: no hay niveles marcados entre la entrada y el objetivo, a ' + fmtN(tdist) + ' pts.');
+    /* hora del día */
+    var rel = Math.round((e.t - st.day.sessStart) / MIN);
+    if (rel >= 1050 && rel < 1170) con.push('Es el mediodía de Nueva York (11:30 a 13:30): suele haber menos movimiento y más giros que no continúan.');
+    else if (rel >= 930 && rel < 1020) pro.push('Ocurre en los primeros 90 minutos de Nueva York, la franja con más participación del día.');
+    var score = pro.length - con.length;
+    return { pro: pro, con: con, side: side, grade: score >= 4 ? 'alta' : score >= 2 ? 'media' : 'baja',
+             inval: 'Un precio en ' + fmtP(su.stop) + ', ' + (e.stopWhy || 'al otro lado de la señal') + '. Si llega ahí, los ' + (sell ? 'compradores' : 'vendedores') + ' recuperaron el control y la razón de la entrada dejó de existir: se sale sin discutir.' };
+  }
+  function reasonsHtml(e, su) {
+    var R = reasons(e, su), li = function (t) { return '<li>' + esc(t) + '</li>'; };
+    return '<div class="why"><h4>Se toma la ' + R.side + ' porque</h4><ol>' + R.pro.map(li).join('') + '</ol>' +
+      '<h4>En contra</h4>' + (R.con.length ? '<ul>' + R.con.map(li).join('') + '</ul>' : '<p>Nada relevante en contra con los indicadores activos.</p>') +
+      '<h4>Qué la invalida</h4><p>' + esc(R.inval) + '</p>' +
+      '<p class="grade g-' + R.grade + '">Confluencia ' + R.grade + ': ' + R.pro.length + ' a favor, ' + R.con.length + ' en contra.</p></div>';
   }
 
   /* ---------- gráfico ---------- */
