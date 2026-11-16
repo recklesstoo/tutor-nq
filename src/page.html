@@ -120,6 +120,13 @@ button{cursor:pointer}
 .why p{margin:0;max-width:62ch}
 .why .grade{margin-top:4px;padding:6px 10px;border:1px solid var(--line);border-left:4px solid var(--muted);border-radius:0 4px 4px 0;font-weight:600;font-size:13px}
 .why .g-alta{border-left-color:var(--up)} .why .g-media{border-left-color:var(--warn)} .why .g-baja{border-left-color:var(--down)}
+.ai{border-top:3px solid var(--lv-prior)}
+.aiout p{margin:0 0 6px;max-width:62ch} .aiout .ailab{font-weight:600;color:var(--muted);font-size:12.5px}
+.aibar{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center;margin-top:10px}
+.aibar .check{flex-direction:row;align-items:center;gap:6px;font-size:12.5px;color:var(--ink)}
+.aiset{display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:4px 12px 12px;border-top:1px solid var(--line)}
+.aiset h3{grid-column:1/-1;font:600 12px var(--f-display);letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin:8px 0 0}
+.aiset .wide,.aiset .fine{grid-column:1/-1} .aiset .fine{margin:0}
 .plan{margin-top:10px;border:1px solid var(--line);border-radius:6px;overflow:hidden}
 .plan .row{display:grid;grid-template-columns:86px 1fr;gap:8px;padding:6px 10px;border-top:1px solid var(--line);align-items:baseline}
 .plan .row:first-child{border-top:0}
@@ -257,6 +264,11 @@ details.card summary{padding:10px 12px;cursor:pointer;font:600 12px var(--f-disp
         <h2>Lectura del tutor</h2>
         <div class="body" id="tutor"></div>
       </section>
+      <section class="card ai" aria-live="polite"><h2>Lectura de la IA</h2>
+        <div class="body"><div class="aiout" id="aiOut"></div>
+          <div class="aibar"><button class="btn" id="aiAsk" type="button">Pedir lectura a la IA ahora</button>
+            <label class="field check"><input type="checkbox" id="aiAuto"> Automática en pre-mercado, apertura y entradas</label></div>
+        </div></section>
       <section class="card"><h2>Mis operaciones</h2>
         <div class="body"><div class="score" id="m_tot"></div></div>
         <ul class="mlist" id="m_list"></ul></section>
@@ -282,6 +294,14 @@ details.card summary{padding:10px 12px;cursor:pointer;font:600 12px var(--f-disp
           <label class="field check wide"><input type="checkbox" id="s_vplv"> Usar POC, VAH y VAL del día previo como niveles</label>
           <label class="field check wide"><input type="checkbox" id="s_asia"> Marcar máximo y mínimo de Asia</label>
           <label class="field check wide"><input type="checkbox" id="s_practice"> Modo práctica: preguntarme qué haría antes de mostrar la lectura</label>
+        </div>
+        <div class="aiset">
+          <h3>Inteligencia artificial</h3>
+          <p class="fine" id="ai_where"></p>
+          <label class="field">Proveedor<select id="ai_prov"><option value="openrouter">OpenRouter (tiene modelos gratuitos)</option><option value="anthropic">Anthropic (Claude, de pago)</option></select></label>
+          <label class="field">Modelo<input type="text" id="ai_model" autocomplete="off" spellcheck="false"></label>
+          <label class="field wide">Clave de la API<input type="password" id="ai_key" autocomplete="off" placeholder="Pégala aquí"></label>
+          <p class="fine">La clave se guarda solo en este navegador y se envía únicamente al proveedor que elijas. No la escribas en el repositorio.</p>
         </div>
         <div class="csv">
           <label class="btn" for="csvFile">Importar CSV de 1 minuto</label><input type="file" id="csvFile" accept=".csv,.txt">

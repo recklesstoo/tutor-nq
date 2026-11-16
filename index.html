@@ -120,6 +120,13 @@ button{cursor:pointer}
 .why p{margin:0;max-width:62ch}
 .why .grade{margin-top:4px;padding:6px 10px;border:1px solid var(--line);border-left:4px solid var(--muted);border-radius:0 4px 4px 0;font-weight:600;font-size:13px}
 .why .g-alta{border-left-color:var(--up)} .why .g-media{border-left-color:var(--warn)} .why .g-baja{border-left-color:var(--down)}
+.ai{border-top:3px solid var(--lv-prior)}
+.aiout p{margin:0 0 6px;max-width:62ch} .aiout .ailab{font-weight:600;color:var(--muted);font-size:12.5px}
+.aibar{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center;margin-top:10px}
+.aibar .check{flex-direction:row;align-items:center;gap:6px;font-size:12.5px;color:var(--ink)}
+.aiset{display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:4px 12px 12px;border-top:1px solid var(--line)}
+.aiset h3{grid-column:1/-1;font:600 12px var(--f-display);letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin:8px 0 0}
+.aiset .wide,.aiset .fine{grid-column:1/-1} .aiset .fine{margin:0}
 .plan{margin-top:10px;border:1px solid var(--line);border-radius:6px;overflow:hidden}
 .plan .row{display:grid;grid-template-columns:86px 1fr;gap:8px;padding:6px 10px;border-top:1px solid var(--line);align-items:baseline}
 .plan .row:first-child{border-top:0}
@@ -257,6 +264,11 @@ details.card summary{padding:10px 12px;cursor:pointer;font:600 12px var(--f-disp
         <h2>Lectura del tutor</h2>
         <div class="body" id="tutor"></div>
       </section>
+      <section class="card ai" aria-live="polite"><h2>Lectura de la IA</h2>
+        <div class="body"><div class="aiout" id="aiOut"></div>
+          <div class="aibar"><button class="btn" id="aiAsk" type="button">Pedir lectura a la IA ahora</button>
+            <label class="field check"><input type="checkbox" id="aiAuto"> Automática en pre-mercado, apertura y entradas</label></div>
+        </div></section>
       <section class="card"><h2>Mis operaciones</h2>
         <div class="body"><div class="score" id="m_tot"></div></div>
         <ul class="mlist" id="m_list"></ul></section>
@@ -282,6 +294,14 @@ details.card summary{padding:10px 12px;cursor:pointer;font:600 12px var(--f-disp
           <label class="field check wide"><input type="checkbox" id="s_vplv"> Usar POC, VAH y VAL del día previo como niveles</label>
           <label class="field check wide"><input type="checkbox" id="s_asia"> Marcar máximo y mínimo de Asia</label>
           <label class="field check wide"><input type="checkbox" id="s_practice"> Modo práctica: preguntarme qué haría antes de mostrar la lectura</label>
+        </div>
+        <div class="aiset">
+          <h3>Inteligencia artificial</h3>
+          <p class="fine" id="ai_where"></p>
+          <label class="field">Proveedor<select id="ai_prov"><option value="openrouter">OpenRouter (tiene modelos gratuitos)</option><option value="anthropic">Anthropic (Claude, de pago)</option></select></label>
+          <label class="field">Modelo<input type="text" id="ai_model" autocomplete="off" spellcheck="false"></label>
+          <label class="field wide">Clave de la API<input type="password" id="ai_key" autocomplete="off" placeholder="Pégala aquí"></label>
+          <p class="fine">La clave se guarda solo en este navegador y se envía únicamente al proveedor que elijas. No la escribas en el repositorio.</p>
         </div>
         <div class="csv">
           <label class="btn" for="csvFile">Importar CSV de 1 minuto</label><input type="file" id="csvFile" accept=".csv,.txt">
@@ -855,6 +875,7 @@ details.card summary{padding:10px 12px;cursor:pointer;font:600 12px var(--f-disp
     if (!n) { n = st.day.bars.length; for (var i = 0; i < st.day.bars.length; i++) if ((st.day.bars[i].t - st.day.sessStart) / MIN >= startRel) { n = i + 1; break; } }
     $('scrub').max = st.day.bars.length; st.pan = 0; st.sel = null;
     rebuild(Math.min(n, st.day.bars.length));
+    if (!keepIdx && aiAutoOn() && st.an.S.rel >= 925 && st.an.S.rel < 930) askAI('pre', null);
   }
   function rebuild(n) {
     st.an = E.create(st.day, st.cfg);
@@ -866,18 +887,25 @@ details.card summary{padding:10px 12px;cursor:pointer;font:600 12px var(--f-disp
   function correct(e) { return e.setup != null ? (st.an.S.setups[e.setup].dir > 0 ? 'buy' : 'sell') : 'wait'; }
   function stepFwd(silent) {
     if (st.pend != null) { st.ans[st.pend] = 'none'; st.pend = null; }
-    var S = st.an.S, n0 = S.events.length;
+    var S = st.an.S, n0 = S.events.length, rel0 = S.i >= 0 ? S.rel : -1;
     if (!st.an.step()) { stop(); return false; }
     st.I = null;
     if (st.practice) for (var j = n0; j < S.events.length; j++) if (quizzable(S.events[j]) && st.ans[S.events[j].id] == null) { st.pend = S.events[j].id; st.sel = null; stop(); break; }
     if (S.events.length > n0) st.sel = null;
+    if (aiAutoOn()) {
+      var kind = null, evA = null;
+      for (var q = n0; q < S.events.length; q++) if (S.events[q].setup != null && S.events[q].id !== st.pend) { kind = 'trade'; evA = S.events[q]; break; }
+      if (!kind && rel0 < 925 && S.rel >= 925 && S.rel < 930) kind = 'pre';
+      if (!kind && rel0 < 934 && S.rel >= 934 && S.rel < 945) kind = 'open';
+      if (kind) { ai.hold = true; stop(); askAI(kind, evA); }      /* la repetición se pausa para leer la respuesta */
+    }
     if (!silent) render();
     return true;
   }
   function stepBack() { stop(); var n = st.an.S.i; if (n >= 1) rebuild(n); }
   function nextEvent() {
-    stop(); var S = st.an.S, n0 = S.events.length, guard = 0;
-    while (S.events.length === n0 && guard++ < 2000) if (!stepFwd(true)) break;
+    stop(); var S = st.an.S, n0 = S.events.length, guard = 0; ai.hold = false;
+    while (S.events.length === n0 && guard++ < 2000) if (!stepFwd(true) || ai.hold) break;
     render();
   }
   function prevEvent() {
@@ -1039,8 +1067,8 @@ details.card summary{padding:10px 12px;cursor:pointer;font:600 12px var(--f-disp
   }
   /* Avanza hasta que cierra la vela de la temporalidad elegida y la dibuja completa. */
   function stepCandle() {
-    var n0 = st.an.S.candles.length, guard = 0;
-    while (st.an.S.candles.length === n0 && guard++ < 300) { if (!stepFwd(true) || st.pend != null) break; }
+    var n0 = st.an.S.candles.length, guard = 0; ai.hold = false;
+    while (st.an.S.candles.length === n0 && guard++ < 300) { if (!stepFwd(true) || st.pend != null || ai.hold) break; }
     render();
   }
   function finishTicks() {
@@ -1330,6 +1358,164 @@ details.card summary{padding:10px 12px;cursor:pointer;font:600 12px var(--f-disp
       '<p class="grade g-' + R.grade + '">Confluencia ' + R.grade + ': ' + R.pro.length + ' a favor, ' + R.con.length + ' en contra.</p></div>';
   }
 
+  /* ---------- lectura de IA: pre-mercado, cinco minutos después de la apertura y cuando las reglas dan una entrada ---------- */
+  var AI_STORE = 'tutor-ia-v1';
+  var ai = { cfg: { auto: true, provider: 'openrouter', key: '', model: '' }, items: {}, cur: null, busy: null, err: '', claude: null, hold: false, seq: 0, by: '' };
+  try { var a0 = JSON.parse(localStorage.getItem(AI_STORE) || 'null'); if (a0) { Object.assign(ai.cfg, a0.cfg || {}); ai.items = a0.items || {}; } } catch (e) {}
+  function aiSave() {
+    try {
+      var keys = Object.keys(ai.items).sort(function (a, b) { return ai.items[a].at - ai.items[b].at; }), keep = {};
+      keys.slice(-40).forEach(function (k) { keep[k] = ai.items[k]; }); ai.items = keep;
+      localStorage.setItem(AI_STORE, JSON.stringify({ cfg: ai.cfg, items: keep }));
+    } catch (e) {}
+  }
+  function aiReady() { return !!(ai.claude || ai.cfg.key); }
+  function aiKeyFor(kind, ev) { return [st.ticker, iso(st.D), st.cfg.tf, kind, ev ? ev.i + ev.type + (ev.level || '') + (ev.zone != null ? 'z' + ev.zone : '') : ''].join('|'); }
+  function n2(x) { return String(Math.round(x * 100) / 100); }
+  function priorClose() {
+    var d = st.day; if (d._pc !== undefined) return d._pc; d._pc = null;
+    if (d.prior) { var a = d.prior.date + 570 * MIN, z = d.prior.date + 960 * MIN; for (var i = st.all.length - 1; i >= 0; i--) { var t = st.all[i].t; if (t < a) break; if (t < z) { d._pc = st.all[i].c; break; } } }
+    return d._pc;
+  }
+  function candleLines(list, withDay) {
+    return list.map(function (c) { return (withDay ? ('0' + new Date(c.t).getUTCDate()).slice(-2) + ' ' : '') + hhmm(c.t) + ' ' + n2(c.o) + ' ' + n2(c.h) + ' ' + n2(c.l) + ' ' + n2(c.c) + ' ' + Math.round(c.v || 0); }).join('\n');
+  }
+  function hourly(cs) {
+    var out = [], cur = null;
+    cs.forEach(function (c) {
+      var s = sessOf(c.t), key = s + Math.floor((c.t - s) / HOUR) * HOUR;
+      if (!cur || cur.t !== key) { cur = { t: key, o: c.o, h: c.h, l: c.l, c: c.c, v: c.v || 0 }; out.push(cur); }
+      else { if (c.h > cur.h) cur.h = c.h; if (c.l < cur.l) cur.l = c.l; cur.c = c.c; cur.v += c.v || 0; }
+    });
+    return out;
+  }
+  /* Todo lo que se le manda a la IA sale de lo ya visto en la repetición: nada posterior a la vela actual. */
+  function aiContext() {
+    var S = st.an.S, I = ind(), cs = I.cs, n = cs.length, d = st.day, px = S.bar.c, L = [], tfL = st.an.cfg.tf >= 60 ? (st.an.cfg.tf / 60) + ' h' : st.an.cfg.tf + ' min';
+    L.push('Instrumento: ' + st.ticker + ', futuro del Nasdaq-100. Sesión del ' + iso(st.D) + '. Hora de la repetición: ' + hhmm(S.bar.t + MIN) + ' de Nueva York. Fase: ' + phase(S.rel, st.an.cfg.orbMin) + '. Precio actual: ' + n2(px) + '.');
+    if (d.prior) {
+      var pc = priorClose();
+      L.push('Día previo: máximo ' + n2(d.prior.high) + ', mínimo ' + n2(d.prior.low) + (pc != null ? ', cierre de la sesión regular ' + n2(pc) + ' (el precio actual está ' + sgn(px - pc) + ' pts respecto a ese cierre)' : '') +
+        (d.prior.vp ? '. Área de valor previa: VAH ' + n2(d.prior.vp.vah) + ', POC ' + n2(d.prior.vp.poc) + ', VAL ' + n2(d.prior.vp.val) : '') + '.');
+    }
+    var fin = [], form = [];
+    S.levels.forEach(function (lv) { (lv.final ? fin : form).push(lv.short + ' ' + n2(lv.price) + (lv.final && lv.brk ? (lv.brk.dir > 0 ? ' (roto al alza)' : ' (roto a la baja)') : '')); });
+    if (fin.length) L.push('Niveles definidos: ' + fin.join('; ') + '.');
+    if (form.length) L.push('Niveles aún formándose: ' + form.join('; ') + '.');
+    var extra = [];
+    if (I.vwap[n - 1] != null) extra.push('VWAP de la sesión ' + n2(I.vwap[n - 1]));
+    if (I.vp) extra.push('perfil de volumen de la sesión: VAH ' + n2(I.vp.vah) + ', POC ' + n2(I.vp.poc) + ', VAL ' + n2(I.vp.val));
+    if (I.rsi[n - 1] != null) extra.push('RSI 14 en ' + I.rsi[n - 1].toFixed(0));
+    if (I.hist[n - 1] != null) extra.push('histograma del MACD ' + I.hist[n - 1].toFixed(1));
+    if (I.wr[n - 1] != null) extra.push('Williams %R ' + I.wr[n - 1].toFixed(0));
+    if (I.vavg[n - 1]) extra.push('volumen de la última vela ' + (cs[n - 1].v / I.vavg[n - 1]).toFixed(1) + ' veces el promedio de 20');
+    if (extra.length) L.push('Indicadores en velas de ' + tfL + ': ' + extra.join('; ') + '.');
+    if (st.an.cfg.tf < 60) L.push('Velas de 1 hora recientes (día hora apertura máximo mínimo cierre volumen):\n' + candleLines(hourly(cs).slice(-12), true));
+    L.push('Últimas velas de ' + tfL + ' (hora apertura máximo mínimo cierre volumen):\n' + candleLines(cs.slice(-20), false));
+    var evs = S.events.filter(function (e) { return e.id !== st.pend; }).slice(-8).map(function (e) { return hhmm(e.t) + ' ' + e.title; });
+    if (evs.length) L.push('Últimos eventos marcados por las reglas: ' + evs.join('; ') + '.');
+    return L.join('\n');
+  }
+  var AI_SYS = 'Eres un tutor de trading intradía de futuros del Nasdaq (NQ y MNQ) para un trader que opera ORB, niveles de sesión (día previo, Asia, Londres), área de valor, VWAP y FVG. Analizas una sesión en repetición con fines educativos. ' +
+    'Usa solo los datos que recibes: no inventes noticias, niveles ni cifras; si un dato falta, dilo. Cita precios concretos y no prometas resultados. ' +
+    'Responde en español, en texto plano sin markdown ni asteriscos, con un máximo de 170 palabras y exactamente las líneas pedidas, cada una empezando por su etiqueta seguida de dos puntos.';
+  function buildPrompt(kind, ev) {
+    var S = st.an.S, task, label, more = '';
+    if (kind === 'pre') {
+      label = 'Pre-mercado · ' + hhmm(S.bar.t + MIN);
+      task = 'Tarea: lectura de pre-mercado, antes de la apertura de las 09:30. Líneas: Contexto: qué hizo el precio en Asia y Londres y dónde está frente al día previo. Sesgo: alcista, bajista o neutral, con la razón principal. Niveles clave: los dos más importantes arriba y abajo, con precio. Escenario A: qué te haría buscar compras. Escenario B: qué te haría buscar ventas. Evitar: el error más probable hoy.';
+    } else if (kind === 'open') {
+      label = 'Apertura · ' + hhmm(S.bar.t + MIN);
+      var ob = st.day.bars.filter(function (b, i) { var r = (b.t - st.day.sessStart) / MIN; return i <= S.i && r >= 930; });
+      more = '\nVelas de 1 minuto desde la apertura (hora apertura máximo mínimo cierre volumen):\n' + candleLines(ob.slice(0, 15), false);
+      task = 'Tarea: lectura de la apertura, unos minutos después de las 09:30. Líneas: Tipo de apertura: impulso en una dirección, prueba y rechazo, o rotación sin dirección. Primeros minutos: qué hicieron las velas de 1 minuto y el volumen. Frente al contexto: si confirma o contradice lo ocurrido en la noche y el día previo. Qué esperar del ORB: hacia dónde es más probable el rompimiento y qué lo invalidaría. Plan: qué esperar antes de entrar.';
+    } else if (kind === 'trade') {
+      var su = S.setups[ev.setup], R = reasons(ev, su), side = su.dir > 0 ? 'compra' : 'venta';
+      label = 'Entrada · ' + hhmm(ev.t) + ' · ' + side + ' · ' + ev.title;
+      more = '\nEntrada que dieron las reglas: ' + side + ' en ' + n2(su.entry) + ', stop en ' + n2(su.stop) + ' (' + (ev.stopWhy || '') + '), objetivo en ' + n2(su.target) + ', riesgo de ' + n2(su.risk) + ' pts. Señal: ' + ev.title + '. ' + ev.what +
+        '\nRazones a favor según las reglas: ' + R.pro.join(' | ') + '\nEn contra según las reglas: ' + (R.con.length ? R.con.join(' | ') : 'ninguna') + '.';
+      task = 'Tarea: las reglas mecánicas acaban de dar esta entrada; da una segunda opinión independiente. Líneas: Veredicto: tomar, tomar con menos tamaño o dejar pasar. A favor: lo más fuerte. En contra: lo que más preocupa. Vigilar: qué confirmaría o negaría la idea en las próximas velas. Gestión: dónde asegurar o mover el stop.';
+    } else {
+      label = 'Lectura · ' + hhmm(S.bar.t + MIN);
+      task = 'Tarea: lectura del momento actual. Líneas: Contexto: qué ha hecho el precio hasta ahora. Sesgo: alcista, bajista o neutral, con la razón principal. Niveles clave: los más cercanos arriba y abajo, con precio. Qué esperar: el escenario más probable y qué lo cambiaría. Evitar: el error más probable ahora.';
+    }
+    return { sys: AI_SYS, user: aiContext() + more + '\n\n' + task, label: label };
+  }
+  async function callModel(p) {
+    if (ai.claude) { var r = await ai.claude(p.sys + '\n\n' + p.user, { modelTier: 'default' }); ai.by = 'Claude'; return ((r && r.text) || '').trim(); }
+    var c = ai.cfg, res, j, text;
+    if (c.provider === 'anthropic') {
+      res = await fetch('https://api.anthropic.com/v1/messages', { method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-api-key': c.key, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
+        body: JSON.stringify({ model: c.model || 'claude-haiku-5-5', max_tokens: 700, system: p.sys, messages: [{ role: 'user', content: p.user }] }) });
+      j = await res.json().catch(function () { return {}; });
+      if (!res.ok) throw { status: res.status, message: j.error && j.error.message };
+      ai.by = j.model || c.model || 'Claude';
+      text = (j.content || []).filter(function (b) { return b.type === 'text'; }).map(function (b) { return b.text; }).join('');
+    } else {
+      res = await fetch('https://openrouter.ai/api/v1/chat/completions', { method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + c.key },
+        body: JSON.stringify({ model: c.model || 'openrouter/free', max_tokens: 1500, messages: [{ role: 'system', content: p.sys }, { role: 'user', content: p.user }] }) });
+      j = await res.json().catch(function () { return {}; });
+      if (!res.ok || j.error) throw { status: j.error && j.error.code ? j.error.code : res.status, message: j.error && j.error.message };
+      ai.by = j.model || c.model || 'OpenRouter';
+      text = (j.choices && j.choices[0] && j.choices[0].message && j.choices[0].message.content) || '';
+    }
+    text = String(text).trim(); if (!text) throw { message: 'el modelo devolvió una respuesta vacía' };
+    return text;
+  }
+  function aiErrText(err) {
+    var s = err && err.status, code = err && err.code;
+    if (code === 'not_granted') return 'No diste permiso para consultar a Claude desde esta página.';
+    if (code === 'rate_limited' || s === 429) return 'Se alcanzó el límite de consultas del servicio. Espera un rato o inténtalo más tarde.';
+    if (s === 401 || s === 403) return 'El servicio no aceptó la clave. Revísala en Reglas y datos.';
+    if (s === 402) return 'La cuenta no tiene saldo para ese modelo.';
+    if (s === 404) return 'El servicio no reconoce ese modelo. Revisa el nombre en Reglas y datos.';
+    if (err instanceof TypeError) return 'No se pudo conectar con el servicio de IA. Revisa tu conexión.';
+    return 'La IA no respondió' + (err && err.message ? ': ' + String(err.message).slice(0, 160) : '.');
+  }
+  async function askAI(kind, ev, force) {
+    var key = aiKeyFor(kind, ev); ai.cur = key; ai.err = '';
+    if (ai.items[key] && !force) { renderAI(); return; }
+    if (!aiReady()) { renderAI(); return; }
+    var p = buildPrompt(kind, ev), my = ++ai.seq;
+    ai.busy = { key: key, label: p.label }; renderAI();
+    try { var text = await callModel(p); ai.items[key] = { label: p.label, text: text, at: Date.now(), by: ai.by }; aiSave(); }
+    catch (err) { if (my === ai.seq) ai.err = aiErrText(err); }
+    if (my === ai.seq) ai.busy = null;
+    renderAI();
+  }
+  function aiAutoOn() { return ai.cfg.auto && aiReady() && st.source !== 'demo'; }
+  function aiManual() {
+    var S = st.an.S, e = st.sel != null ? S.events[st.sel] : S.events[S.events.length - 1], kind = 'now', ev = null;
+    if (e && e.setup != null && e.id !== st.pend && (st.sel != null || e.i === S.i)) { kind = 'trade'; ev = e; }
+    else if (S.rel < 930) kind = 'pre'; else if (S.rel < 945) kind = 'open';
+    var key = aiKeyFor(kind, ev);
+    askAI(kind, ev, !!ai.items[key] && ai.cur === key);     /* si ya se ve esa lectura, el botón vuelve a preguntar */
+  }
+  function renderAI() {
+    var out = $('aiOut'); if (!out) return;
+    if (st.an && st.an.S.i >= 0 && !ai.busy) {
+      var S = st.an.S, e = st.sel != null ? S.events[st.sel] : null;
+      if (e && e.setup != null) { var k = aiKeyFor('trade', e); if (ai.items[k]) ai.cur = k; }
+    }
+    var it = ai.cur ? ai.items[ai.cur] : null, h = '';
+    if (ai.busy) h = '<p class="ailab">' + esc(ai.busy.label) + '</p><p class="empty">Consultando a la IA…</p>';
+    else if (ai.err) h = '<p class="note">' + esc(ai.err) + '</p>';
+    else if (it) {
+      h = '<p class="ailab">' + esc(it.label) + '</p>' + it.text.replace(/\*\*/g, '').split(/\n+/).map(function (ln) {
+        ln = ln.trim(); if (!ln) return ''; var m = ln.match(/^([^:]{2,30}):\s*(.*)$/);
+        return m ? '<p><b>' + esc(m[1]) + ':</b> ' + esc(m[2]) + '</p>' : '<p>' + esc(ln) + '</p>';
+      }).join('') + '<p class="fine">Respuesta de ' + esc(it.by || 'IA') + '. Es una segunda opinión generada por un modelo: puede equivocarse.</p>';
+    } else if (!aiReady()) h = '<p class="empty">Para activarla en este sitio, pega tu clave en Reglas y datos, sección Inteligencia artificial. La IA da su lectura en el pre-mercado, cinco minutos después de la apertura y cada vez que las reglas dan una entrada.</p>';
+    else h = '<p class="empty">Lista. La IA da su lectura en el pre-mercado (09:25), cinco minutos después de la apertura (09:35) y cada vez que las reglas dan una entrada. La repetición se pausa para que la leas.</p>';
+    out.innerHTML = h;
+    var it2 = ai.cur && ai.items[ai.cur];
+    $('aiAsk').textContent = ai.busy ? 'Consultando…' : 'Pedir lectura a la IA ahora'; $('aiAsk').disabled = !!ai.busy || !aiReady();
+    $('aiAuto').checked = !!ai.cfg.auto;
+    var w = $('ai_where'); if (w) w.textContent = ai.claude ? 'Dentro de Claude la lectura usa tu cuenta de Claude: no hace falta clave.' : 'En este sitio la lectura usa tu propia clave. Con OpenRouter y el modelo openrouter/free no tiene costo, con un límite diario de consultas.';
+  }
+
   /* ---------- gráfico ---------- */
   var col = null;
   function colors() {
@@ -1604,7 +1790,7 @@ details.card summary{padding:10px 12px;cursor:pointer;font:600 12px var(--f-disp
 
   function render() {
     if (!st.an || st.an.S.i < 0) return;
-    syncManual(); layout(); renderNow(); renderTrade(); renderTutor(); renderLevels(); renderLog(); renderScore(); draw();
+    syncManual(); layout(); renderNow(); renderTrade(); renderTutor(); renderAI(); renderLevels(); renderLog(); renderScore(); draw();
     var S = st.an.S; $('scrub').value = S.i + 1;
     $('back').disabled = S.i < 1; $('fwd').disabled = S.i + 1 >= st.day.bars.length;
   }
@@ -1647,6 +1833,15 @@ details.card summary{padding:10px 12px;cursor:pointer;font:600 12px var(--f-disp
     $('retry').onclick = function () { loadReal(); };
 
     $('play').onclick = toggle;
+    $('aiAsk').onclick = aiManual;
+    $('aiAuto').onchange = function () { ai.cfg.auto = this.checked; aiSave(); };
+    $('ai_prov').value = ai.cfg.provider; $('ai_model').value = ai.cfg.model; $('ai_key').value = ai.cfg.key;
+    function aiPh() { $('ai_model').placeholder = $('ai_prov').value === 'anthropic' ? 'claude-haiku-5-5' : 'openrouter/free'; }
+    aiPh();
+    $('ai_prov').onchange = function () { ai.cfg.provider = this.value; aiPh(); aiSave(); renderAI(); };
+    $('ai_model').onchange = function () { ai.cfg.model = this.value.trim(); aiSave(); };
+    $('ai_key').onchange = function () { ai.cfg.key = this.value.trim(); ai.err = ''; aiSave(); renderAI(); };
+    if (window.claude && typeof window.claude.use === 'function') window.claude.use('sample').then(function (fn) { ai.claude = typeof fn === 'function' ? fn : null; renderAI(); }).catch(function () {});
     ['m_sl', 'm_tp', 'm_loss', 'm_gain'].forEach(function (id) { $(id).oninput = applySizing; });
     $('m_qty').oninput = renderCalc;
     $('m_buy').onclick = function () { openManual(1); }; $('m_sell').onclick = function () { openManual(-1); };
@@ -1681,6 +1876,7 @@ details.card summary{padding:10px 12px;cursor:pointer;font:600 12px var(--f-disp
     $('tutor').addEventListener('click', function (ev) {
       var b = ev.target.closest('[data-ans]'); if (!b || st.pend == null) return;
       st.ans[st.pend] = b.getAttribute('data-ans'); st.sel = st.pend; st.pend = null; render();
+      var pe = st.an.S.events[st.sel]; if (pe && pe.setup != null && aiAutoOn()) askAI('trade', pe);   /* en modo práctica, la IA opina después de tu respuesta */
     });
     $('log').addEventListener('click', function (ev) {
       var li = ev.target.closest('[data-ev]'); if (!li) return; var id = +li.getAttribute('data-ev');
