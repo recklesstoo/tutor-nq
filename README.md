@@ -21,7 +21,8 @@ y marca *Read and write permissions*.
 
 ## Cómo se actualiza
 
-- `.github/workflows/actualizar-datos.yml` corre cada hora de lunes a viernes.
+- `.github/workflows/actualizar-datos.yml` está programada cada 15 minutos de lunes a viernes.
+  GitHub no garantiza las corridas programadas y se salta varias; por eso se piden tan seguidas.
 - `scripts/update_data.py` pide a Yahoo la última semana de velas de 1 minuto de `NQ=F` y
   `MNQ=F`, y la mezcla con lo guardado. El historial crece con el tiempo.
 - Para cambiar la frecuencia, edita la línea `cron` del flujo.

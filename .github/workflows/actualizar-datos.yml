@@ -2,7 +2,9 @@ name: Actualizar datos de Yahoo
 
 on:
   schedule:
-    - cron: "23 * * * 1-5"   # cada hora, de lunes a viernes (hora UTC; el lunes 00:23 UTC ya es la apertura del domingo en Nueva York)
+    # GitHub se salta muchas corridas programadas, así que se pide cada 15 minutos para que siempre entre alguna.
+    - cron: "7,22,37,52 * * * 1-5"   # lunes a viernes, hora UTC
+    - cron: "7,37 23 * * 0"          # domingo en la noche: apertura de la sesión en Nueva York
   workflow_dispatch:          # botón "Run workflow" para correrla a mano
 
 permissions:
